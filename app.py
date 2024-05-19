@@ -22,7 +22,7 @@ import joblib
 import os
 import time
 import atexit
-import shutil
+# import shutil
 
 import streamlit as st
 
@@ -57,6 +57,8 @@ if len(uploaded_files) != 0:
     if "qa" in st.session_state:
       # if qa chain exists, answer using that
       print("QA Chain already exists!")
+      print("Ready for questions!")
+      st.write("Ready for questions!")
     else:
       # if qa chain does not exist, create it
       with st.spinner(text="Loading output.md..."):
@@ -100,6 +102,8 @@ if len(uploaded_files) != 0:
         )
         
       st.session_state.qa = qa
+      print("Ready for questions!")
+      st.write("Ready for questions!")
   else:
     # output.md does not exist but PDFs are available
     # parse them and create the model
@@ -181,6 +185,8 @@ if len(uploaded_files) != 0:
       )
     
     st.session_state.qa = qa
+    print("Ready for questions!")
+    st.write("Ready for questions!")
 else:
   # no files have been uploaded
   st.session_state.is_uploaded = False
@@ -222,8 +228,8 @@ def cleanup_dir():
   for filename in os.listdir(os.getcwd()):
     if filename.startswith('TEMP_'):
       os.remove(filename)
-  chroma_folder = ".chroma"
-  shutil.rmtree(chroma_folder)
+  # chroma_folder = ".chroma"
+  # shutil.rmtree(chroma_folder)
 
 atexit.register(cleanup_dir)
 
