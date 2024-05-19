@@ -10,3 +10,4 @@ unstructured
 markdown
 fastembed
 chromadb
+pysqlite3-binary
