@@ -1,0 +1,10 @@
+chromadb==0.3.29
+langchain
+pypdf
+sentence-transformers
+llama-parse
+unstructured
+fastembed
+langchain-groq
+streamlit
+markdown
