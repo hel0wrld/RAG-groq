@@ -7,3 +7,4 @@ llama_parse==0.4.3
 python-dotenv==1.0.1
 streamlit==1.34.0
 unstructured
+markdown
