@@ -1,21 +1,9 @@
-from llama_parse import LlamaParse
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
 from langchain_groq import ChatGroq
-from langchain.prompts import PromptTemplate
-from langchain.chains import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
-from langchain_community.vectorstores import Chroma
-from langchain_community.document_loaders import UnstructuredMarkdownLoader
-from pathlib import Path
 from dotenv import load_dotenv
 from helper import (
-  iter_files_pdf,
-  iter_files_pkl,
-  parsed_doc,
-  set_custom_prompt,
-  custom_prompt_template
+  parse_pdfs,
+  load_output,
+  create_chat_chain
 )
 
 import joblib
@@ -23,14 +11,6 @@ import os
 import time
 import atexit
 # import shutil
-
-# --------- debugging -----------
-
-__import__('pysqlite3')
-import sys
-sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-
-# -------------------------------
 
 import streamlit as st
 
@@ -56,149 +36,91 @@ uploaded_files = st.sidebar.file_uploader(
 
 # check if PDF exists and update session accordingly
 if len(uploaded_files) != 0:
+  # if True, files are uploaded
+  # if False, files are not uploaded
   st.session_state.is_uploaded = True
-  # check if output.md exists
-  st.session_state.output_exists = os.path.exists('TEMP_output.md')
   
-  # if output.md exists, check for qa chain
-  if st.session_state.output_exists:
-    if "qa" in st.session_state:
-      # if qa chain exists, answer using that
-      print("QA Chain already exists!")
-      print("Ready for questions!")
+  # check if output.md exists
+  if "output_exists" in st.session_state:
+    # if True, output.md exists
+    # if False, output.md does not exist
+    
+    # if output.md exists, check the files list
+    # collect all the uploaded PDF files and add "TEMP_" for comparsion
+    temp_files_list = []
+    for uploaded_file in uploaded_files:
+      if not uploaded_file.name.endswith('.pdf'):
+        filename = 'TEMP_' + uploaded_file.name + '.pdf'
+      else:
+        filename = 'TEMP_' + uploaded_file.name
+      temp_files_list.append(filename)
+    
+    temp_files_list.sort()
+    st.session_state.files_list.sort()
+    # check if this matches with list already present
+    if temp_files_list == st.session_state.files_list:
+      # if True, no need to parse again, we are ready to answer questions
+      # if False, we need to parse the files again
+      print("No PDF files have been modified...")
+      print("Existing PDFs in vector database: ", uploaded_files)
       st.write("Ready for questions!")
     else:
-      # if qa chain does not exist, create it
-      with st.spinner(text="Loading output.md..."):
-        loader = UnstructuredMarkdownLoader('TEMP_output.md')
-      
-        documents = loader.load()
-        text_splitter = RecursiveCharacterTextSplitter(
-          chunk_size=2000,
-          chunk_overlap=100
-        )
-        docs = text_splitter.split_documents(documents=documents)
-        
-        embed_model = FastEmbedEmbeddings()
-        vectorstore = Chroma.from_documents(
-          documents=docs,
-          collection_name='pdf_collection',
-          embedding=embed_model
-        )
-        
-      with st.spinner(text="Creating chat model..."):
-        # create chain
-        chat_model = ChatGroq(
-          model_name='llama3-8b-8192',
-          api_key=GROQ_API_KEY
-        )
-        
-        retriever = vectorstore.as_retriever(
-          search_kwargs={'k':3}
-        )
-        
-        prompt = set_custom_prompt(custom_prompt_template=custom_prompt_template)
-        
-        # create chat chain
-        combine_docs_chain = create_stuff_documents_chain(
-          llm=chat_model, prompt=prompt
-        )
-        
-        qa = create_retrieval_chain(
-          retriever=retriever,
-          combine_docs_chain=combine_docs_chain
-        )
-        
-      st.session_state.qa = qa
-      print("Ready for questions!")
-      st.write("Ready for questions!")
-  else:
-    # output.md does not exist but PDFs are available
-    # parse them and create the model
-    
-    # if files are uploaded, save them
-    if st.session_state.is_uploaded:
-      for uploaded_file in uploaded_files:
-        if not uploaded_file.name.endswith('.pdf'):
-          filename = 'TEMP_' + uploaded_file.name + '.pdf'
-        else:
-          filename = 'TEMP_' + uploaded_file.name
-        save_path = os.path.join(os.getcwd(), filename)
-        # if file is already saved, don't save it again
-        if os.path.exists(save_path):
-          print(f"{uploaded_file.name} already exists!")
-          continue
-        else:
-          print(f"{uploaded_file.name} does not exist! saving...")
-          with open(save_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-    
-    with st.spinner(text="Parsing the PDFs..."):
-      directory = os.getcwd()
-      for filename in iter_files_pdf(directory=directory):
-        document = parsed_doc(
-          directory=filename,
-          parsing_instruction=parsing_instruction,
-          LLAMA_CLOUD_API_KEY=LLAMA_CLOUD_API_KEY
-        )
-        joblib.dump(document, filename[:-4] + ".pkl")
-        time.sleep(5)
-
-      Path('TEMP_output.md').touch()
-      
-      # add the saved pickles to output.md
-      for filename in iter_files_pkl(directory=directory):
-        docs = joblib.load(filename)
-        with open('TEMP_output.md', 'a', encoding='utf-8') as f:
-          for doc in docs:
-            f.write(doc.text + '\n')
-            
-    with st.spinner(text="Loading output.md..."):
-      loader = UnstructuredMarkdownLoader('TEMP_output.md')
-
-      documents = loader.load()
-      text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=2000, chunk_overlap=100
-      )
-      docs = text_splitter.split_documents(documents)
-            
-      embed_model = FastEmbedEmbeddings()
-      vectorstore = Chroma.from_documents(
-        documents=docs,
-        collection_name='pdf_collection',
-        embedding=embed_model
-      )
-      
-    with st.spinner(text="Creating chat model..."):
-      # create chain
-      chat_model = ChatGroq(
-        model_name='llama3-8b-8192',
-        api_key=GROQ_API_KEY
-      )
-      
-      retriever = vectorstore.as_retriever(
-        search_kwargs={'k':3}
-      )
-      
-      prompt = set_custom_prompt(custom_prompt_template=custom_prompt_template)
-      
+      # parse all the PDFs
+      # create output.md
       # create chat chain
-      combine_docs_chain = create_stuff_documents_chain(
-        llm=chat_model, prompt=prompt
-      )
       
-      qa = create_retrieval_chain(
-        retriever=retriever,
-        combine_docs_chain=combine_docs_chain
+      # we should ideally only add the new PDFs, but it is tricky to implement
+      # i will freshly parse all the new PDFs
+      
+      # in this case, an old output.md files should already exist
+      # we want to remove it first
+      print("New PDF files have been uploaded!")
+      print("Existing PDFs in vector database: ", st.session_state.files_list)
+      print("New PDFs in vector database: ", uploaded_files)
+      
+      print("Removing old output.md file...")
+      os.remove('TEMP_output.md')
+      
+      # parse the PDFs
+      parse_pdfs(
+        uploaded_files=uploaded_files,
+        parsing_instruction=parsing_instruction
       )
+      # create output.md
+      vectorstore = load_output()
+      # mark that output.md has been created
+      st.session_state.output_exists = True
+      # create chat chain
+      qa_model = create_chat_chain(
+        vectorstore=vectorstore,
+        GROQ_API_KEY=GROQ_API_KEY
+      )
+      # set qa on session_state
+      st.session_state.qa = qa_model
+  else:
+    # output.md does not exist
+    # we need to parse all the PDFs 
     
-    st.session_state.qa = qa
-    print("Ready for questions!")
-    st.write("Ready for questions!")
+    # we don't need to remove any output.md files here
+    parse_pdfs(
+      uploaded_files=uploaded_files,
+      parsing_instruction=parsing_instruction
+    )
+    # create output.md
+    vectorstore = load_output()
+    # mark that output.md has been created
+    st.session_state.output_exists = True
+    # create chat chain
+    qa_model = create_chat_chain(
+      vectorstore=vectorstore,
+      GROQ_API_KEY=GROQ_API_KEY
+    )
+    # set qa on session_state
+    st.session_state.qa = qa_model
 else:
-  # no files have been uploaded
+  # no files have been uploaded yet
   st.session_state.is_uploaded = False
-        
+      
 
 # create a text input box
 query_input = st.text_input(
